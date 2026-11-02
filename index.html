@@ -13,6 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preload" href="kailasa.glb" as="fetch" crossorigin>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   :root {
     --bg: #0b0806;
@@ -37,8 +39,13 @@
     min-height: 100svh;
     display: flex;
     align-items: center;
+    overflow: hidden;
   }
-  .hero picture, .hero img {
+  .scene {
+    position: absolute;
+    inset: 0;
+  }
+  .scene img {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -46,15 +53,28 @@
     object-fit: cover;
     object-position: 70% center;
   }
-  .hero::after {
+  .scene::after {
     content: "";
     position: absolute;
     inset: 0;
+    pointer-events: none;
     background: linear-gradient(90deg, rgba(11,8,6,.92) 0%, rgba(11,8,6,.7) 30%, rgba(11,8,6,0) 55%);
   }
+  /* The temple model, placed over the hologram cube in the photo by layoutHologram() */
+  model-viewer {
+    position: absolute;
+    z-index: 1;
+    background: transparent;
+    --poster-color: transparent;
+    --progress-bar-color: transparent;
+    filter: drop-shadow(0 0 8px rgba(255, 190, 100, .55)) drop-shadow(0 0 24px rgba(110, 200, 255, .3));
+    opacity: 0;
+    transition: opacity 1.2s ease;
+  }
+  model-viewer.ready { opacity: 1; }
   .content {
     position: relative;
-    z-index: 1;
+    z-index: 2;
     width: min(560px, 100%);
     padding: 48px 16px 48px clamp(16px, 6vw, 96px);
     animation: rise 1.4s ease-out both;
@@ -125,13 +145,21 @@
   .note.ok { color: var(--gold); }
   .note.err { color: #e98b6f; }
 
+  /* Phones and narrow tablets: show the photo cropped to Liam and the model, text underneath */
   @media (max-width: 900px) {
     .hero { align-items: flex-end; }
-    .hero img { object-position: 78% 20%; }
-    .hero::after {
-      background: linear-gradient(180deg, rgba(11,8,6,0) 25%, rgba(11,8,6,.75) 55%, rgba(11,8,6,.97) 78%);
+    .scene img {
+      inset: auto;
+      top: 0;
+      left: -106vw;
+      width: 228vw;
+      height: auto;
+      object-fit: fill;
     }
-    .content { padding: 0 16px 40px; }
+    .scene::after {
+      background: linear-gradient(180deg, rgba(11,8,6,0) 0, rgba(11,8,6,0) calc(127vw - 160px), rgba(11,8,6,.92) calc(127vw - 20px), var(--bg) calc(127vw + 1px));
+    }
+    .content { padding: calc(127vw - 70px) 16px 40px; }
     form { flex-direction: column; }
     button { padding: 15px; }
   }
@@ -139,10 +167,14 @@
 </head>
 <body>
   <main class="hero">
-    <picture>
-      <source media="(max-width: 900px)" srcset="hero-small.jpg">
-      <img src="hero.jpg" alt="Liam Richards as a gleeful mad scientist holding a glowing model of the Kailasa temple">
-    </picture>
+    <div class="scene">
+      <img id="photo" src="hero.jpg" width="2400" height="1339" alt="Liam Richards as a gleeful mad scientist holding a glowing hologram of the Kailasa temple">
+      <model-viewer id="temple" src="kailasa.glb" alt="3D model of the Kailasa temple, slowly turning"
+        auto-rotate auto-rotate-delay="0" rotation-per-second="18deg"
+        camera-controls disable-zoom disable-pan disable-tap touch-action="pan-y" interaction-prompt="none"
+        camera-orbit="35deg 66deg 78%" field-of-view="28deg"
+        environment-image="legacy" tone-mapping="aces" exposure="0.6" shadow-intensity="0"></model-viewer>
+    </div>
     <div class="content">
       <h1>Liam<br>Richards</h1>
       <p class="tagline">The most ambitious ancient history quest…</p>
@@ -156,6 +188,43 @@
     </div>
   </main>
 <script>
+  // Where the empty hologram cube sits in hero.jpg, as fractions of the image.
+  const HOLO = { x: 0.637, y: 0.43, size: 0.25 };
+  const photo = document.getElementById("photo");
+  const temple = document.getElementById("temple");
+
+  function layoutHologram() {
+    const box = photo.getBoundingClientRect();
+    const scene = photo.parentElement.getBoundingClientRect();
+    let w = box.width, h = box.height, left = box.left, top = box.top;
+    const style = getComputedStyle(photo);
+    if (style.objectFit === "cover") {
+      const iw = photo.naturalWidth || 2400, ih = photo.naturalHeight || 1339;
+      const scale = Math.max(box.width / iw, box.height / ih);
+      const [px, py] = style.objectPosition.split(" ").map((v) => parseFloat(v) / 100);
+      w = iw * scale;
+      h = ih * scale;
+      left += (box.width - w) * px;
+      top += (box.height - h) * py;
+    }
+    const size = w * HOLO.size;
+    temple.style.width = temple.style.height = size + "px";
+    temple.style.left = left - scene.left + w * HOLO.x - size / 2 + "px";
+    temple.style.top = top - scene.top + h * HOLO.y - size / 2 + "px";
+  }
+  addEventListener("resize", layoutHologram);
+  photo.complete ? layoutHologram() : photo.addEventListener("load", layoutHologram);
+  layoutHologram();
+  // Recolour the dark basalt as warm sandstone so the carving reads against the candlelit photo.
+  temple.addEventListener("load", () => {
+    for (const m of temple.model.materials) {
+      m.pbrMetallicRoughness.setBaseColorFactor([0.78, 0.48, 0.2, 1]);
+      m.pbrMetallicRoughness.setMetallicFactor(0);
+      m.pbrMetallicRoughness.setRoughnessFactor(0.85);
+    }
+    temple.classList.add("ready");
+  });
+
   const form = document.getElementById("signup");
   const note = document.getElementById("note");
   form.addEventListener("submit", async (e) => {
